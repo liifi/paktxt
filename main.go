@@ -297,12 +297,12 @@ func concatenateAndOutput(toClipboard bool, outputFile string, excludePatterns, 
 	var err error
 
 	if isGitRepo() {
-		fmt.Println("Git repository detected, scanning current directory recursively (similar to non-git behavior).")
+		fmt.Println("Git repository detected, using git-aware file scanning (staged and working files).")
+		files, err = getGitFiles(excludePatterns, filterPatterns, nil)
 	} else {
 		fmt.Println("No Git repository detected. Scanning all files recursively from current directory...")
+		files, err = getAllFiles(".", excludePatterns, filterPatterns, nil)
 	}
-	// Pass includePatterns as nil or an empty slice if it's no longer used
-	files, err = getAllFiles(".", excludePatterns, filterPatterns, nil)
 	if err != nil {
 		return fmt.Errorf("failed to get file list: %w", err)
 	}
@@ -401,6 +401,73 @@ func isGitRepo() bool {
 	cmd.Stderr = nil
 	output, err := cmd.Output()
 	return err == nil && strings.TrimSpace(string(output)) == "true"
+}
+
+// getGitFiles gets all files that are either staged for commit or in the working directory
+// This includes tracked files (committed), staged files (added to index), and untracked files
+func getGitFiles(excludePatterns, filterPatterns, includePatterns []string) ([]string, error) {
+	// Get all files that git knows about (tracked + staged)
+	// --cached: files in the index (staged)
+	// --others: untracked files
+	// --exclude-standard: respect .gitignore
+	cmd := exec.Command("git", "ls-files", "--cached", "--others", "--exclude-standard")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to run git ls-files: %w", err)
+	}
+
+	gitFiles := strings.Split(strings.TrimSpace(string(output)), "\n")
+	if len(gitFiles) == 1 && gitFiles[0] == "" {
+		// No files found
+		return []string{}, nil
+	}
+
+	var filteredFiles []string
+	for _, file := range gitFiles {
+		if file == "" {
+			continue
+		}
+
+		// Always exclude paktxt's own output files and executable
+		if strings.HasSuffix(strings.ToLower(file), paktxtExtension) ||
+			strings.EqualFold(filepath.Base(file), "paktxt") || strings.EqualFold(filepath.Base(file), "paktxt.exe") {
+			continue
+		}
+
+		// Check if file exists (git ls-files might list deleted files)
+		if _, err := os.Stat(file); os.IsNotExist(err) {
+			continue
+		}
+
+		// 1. --filter (Whitelist): If filter patterns are provided, file must match at least one
+		if len(filterPatterns) > 0 {
+			if !matchesPattern(file, filterPatterns) {
+				continue
+			}
+		}
+
+		// 2. --exclude (User-defined exclusions)
+		if matchesPattern(file, excludePatterns) {
+			continue
+		}
+
+		// 3. Built-in exclusions (same as getAllFiles)
+		if shouldExcludePath(file) {
+			continue
+		}
+
+		// 4. Binary check (same as getAllFiles)
+		if isBinary, err := isBinaryFileBySignature(file); isBinary {
+			fmt.Printf("Skipping binary file (by signature): %s\n", file)
+			continue
+		} else if err != nil {
+			fmt.Printf("Warning: Error checking binary signature for %s: %v\n", file, err)
+		}
+
+		filteredFiles = append(filteredFiles, file)
+	}
+
+	return filteredFiles, nil
 }
 
 // getAllFiles recursively walks through the directory and collects all non-excluded files.

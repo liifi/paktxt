@@ -16,7 +16,8 @@ paktxt unpack --paktxt-file my_project.paktxt
 paktxt pack -b --exclude '*.log,temp/*'
 
 # 4. Smart filtering - only text files are included
-# Automatically skips: .git/, node_modules/, binaries, temp files
+# Git-aware: includes tracked, staged, and untracked files (respects .gitignore)
+# Non-git: recursively scans directory (skips .git/, node_modules/, binaries, temp files)
 paktxt pack --output-file archive.paktxt
 
 # 5. Unpack to specific directory
@@ -89,6 +90,13 @@ go install github.com/liifi/paktxt@latest
 ### pack - Consolidate Files
 
 The `pack` command scans a directory for text-based files, intelligently ignoring binaries, temp files, and common directories like `.git` and `node_modules`. It prioritizes `README.md` files to appear first.
+
+**Git-Aware Behavior**: When run inside a git repository, `pack` uses git-aware file scanning that includes:
+- All tracked files (committed to git)
+- Staged files (added to the index with `git add`)
+- Untracked files (not ignored by `.gitignore`)
+
+This ensures that only files relevant to your project are included while respecting your `.gitignore` patterns. In non-git directories, it falls back to recursive directory scanning.
 
 #### Basic Usage
 
