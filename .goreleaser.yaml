@@ -1,0 +1,75 @@
+version: 2
+
+project_name: paktxt
+
+before:
+  hooks:
+    - go mod tidy
+    - go generate ./...
+
+builds:
+  - id: main
+    binary: paktxt
+    # main: ./cmd/paktxt/
+    main: .
+    flags:
+      - -trimpath # It will make the build slower
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    # --- BEST PRACTICE FOR FULLY STATIC BUILDS ---
+    # The 'tags' field instructs the Go compiler to use pure Go implementations
+    # for network lookups ('netgo') and user/group lookups ('osuser').
+    # This is crucial for creating a zero-dependency Linux binary.
+    tags:
+      - netgo
+      - osuser
+    # 'ldflags' are passed to the Go linker.
+    # -s: Omit the symbol table.
+    # -w: Omit the DWARF debugging information.
+    # -X: Inject version variables at build time.
+    # --extldflags '-static': Statically link any external libraries (important with CGO).
+    #                        While redundant with CGO_ENABLED=0, it's a good safeguard.
+    ldflags:
+      # - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}
+      - -s -w -X main.version={{.Version}}
+      - --extldflags '-static'
+
+archives:
+  - id: main
+    formats: [ tar.gz, binary ]
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        formats: [ zip, binary ]
+    files:
+      - none* # No additional files to include in the archive.
+    # files:
+    #   - README.md
+    #   - LICENSE
+
+checksum:
+  # name_template: '{{ .ProjectName }}_checksums.txt'
+  name_template: 'checksums.txt'
+
+snapshot:
+  version_template: "{{ .Tag }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - 'Merge pull request'
+      - 'Merge branch'
+
+release:
+  draft: false
+  prerelease: auto
